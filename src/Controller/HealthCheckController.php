@@ -2,19 +2,19 @@
 
 namespace App\Controller;
 
-use App\Entity\HealthCheck;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Repository\HealthCheckRepository;
+use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
 
 class HealthCheckController extends AbstractController
 {
-    private $entityManager;
+    private $healthCheckRepository;
 
-    public function __construct(EntityManagerInterface $entityManager)
+    public function __construct(HealthCheckRepository $healthCheckRepository)
     {
-        $this->entityManager = $entityManager;
+        $this->healthCheckRepository = $healthCheckRepository;
     }
 
     /**
@@ -22,11 +22,9 @@ class HealthCheckController extends AbstractController
      */
     public function onHealthCheck()
     {
-        $healthCheckRepository = $this->entityManager->getRepository(HealthCheck::class);
-
         try {
-            $healthCheckRepository->find(1);
-        } catch (\Exception $e) {
+            $this->healthCheckRepository->find(1);
+        } catch (Exception $e) {
             return new Response("501", 500);
         }
 

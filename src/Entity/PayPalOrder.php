@@ -92,6 +92,4 @@ class PayPalOrder
     {
         $this->refundCallback = $refundCallback;
     }
-
-
 }

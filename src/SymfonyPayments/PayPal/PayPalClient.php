@@ -4,9 +4,11 @@ namespace App\SymfonyPayments\PayPal;
 use App\SymfonyPayments\PayPal\Interfaces\PayPalTransactionInterface;
 use App\SymfonyPayments\PayPal\Order\PayPalOrderBuilder;
 use App\SymfonyPayments\PayPal\Payment\PayPalPaymentBuilder;
+use Exception;
 use GuzzleHttp\Client;
 
-class PayPalClient {
+class PayPalClient
+{
     private const PAYPAL_SANDBOX_URL = "https://api.sandbox.paypal.com";
     private const PAYPAL_LIVE_URL = "https://api.paypal.com";
 
@@ -25,7 +27,8 @@ class PayPalClient {
     /** @var Client */
     private $client;
 
-    public function __construct() {
+    public function __construct()
+    {
         $this->client = new Client([
             "headers" => [
                 "Content-Type" => "application/json"
@@ -33,7 +36,14 @@ class PayPalClient {
         ]);
     }
 
-    public function authenticate($clientId, $clientSecret) {
+    /**
+     * @param $clientId
+     * @param $clientSecret
+     * @return mixed
+     * @throws Exception
+     */
+    public function authenticate($clientId, $clientSecret)
+    {
         $response = $this->client->post($this->getUrl() . self::AUTH_URL, [
             "headers" => [
                 "Accept" => "application/json",
@@ -46,21 +56,23 @@ class PayPalClient {
             ]
         ]);
 
-        if($response->getStatusCode() == 200) {
+        if ($response->getStatusCode() == 200) {
             $body = $response->getBody()->getContents();
             $json = json_decode($body);
 
             return $json->access_token;
         }
 
-        throw new \Exception("Bad tokens");
+        throw new Exception("Bad tokens");
     }
 
-    public function getOrderBuilder() {
+    public function getOrderBuilder()
+    {
         return new PayPalOrderBuilder();
     }
 
-    public function getPaymentBuilder() {
+    public function getPaymentBuilder()
+    {
         return new PayPalPaymentBuilder();
     }
 
@@ -68,11 +80,13 @@ class PayPalClient {
      * @param $isSandbox
      * set to true to disable sandbox mode
      */
-    public function setSandboxMode($isSandbox) {
+    public function setSandboxMode($isSandbox)
+    {
         $this->isSandbox = filter_var($isSandbox, FILTER_VALIDATE_BOOLEAN);
     }
 
-    public function execute($assessToken, PayPalTransactionInterface $transaction) {
+    public function execute($assessToken, PayPalTransactionInterface $transaction)
+    {
         $url = $this->getUrl() . $transaction->getCaptureUrl();
 
         $result = $this->client->post($url, [
@@ -86,11 +100,11 @@ class PayPalClient {
         return json_decode($result->getBody()->getContents());
     }
 
-
     /*
      * private fields
      */
-    private function getUrl() {
+    private function getUrl()
+    {
         return $this->isSandbox ? self::PAYPAL_SANDBOX_URL : self::PAYPAL_LIVE_URL;
     }
 }

@@ -1,20 +1,21 @@
 <?php
-namespace App\Controller\PayPalControllers;
+
+namespace App\Controller\PayPal;
 
 use App\Entity\PayPalOrder;
 use App\Entity\ServerVariables;
 use App\SymfonyPayments\Model\PayPalModel;
 use App\SymfonyPayments\PayPal\Order\PayPalItem;
 use App\SymfonyPayments\PayPal\PayPalClient;
+use Doctrine\ORM\EntityManagerInterface;
 use Exception;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
 
-class PayPalCreatePaymentController extends AbstractController
+class CreatePaymentController extends AbstractController
 {
-
     private $required_fields = [
         PayPalClient::FIELD_AMOUNT,
         PayPalClient::FIELD_CURRENCY,
@@ -22,14 +23,22 @@ class PayPalCreatePaymentController extends AbstractController
         PayPalClient::FIELD_CANCEL_URL
     ];
 
+    private $entityManager;
+    private $payPalClient;
+
+    public function __construct(EntityManagerInterface $entityManager, PayPalClient $payPalClient)
+    {
+        $this->entityManager = $entityManager;
+        $this->payPalClient = $payPalClient;
+    }
+
     /**
      * @Route("/api/paypal/payment", methods={"POST", "OPTIONS"})
      * @param Request $request
-     * @param PayPalClient $client
      * @return JsonResponse|void
      * @throws Exception
      */
-    public function createPayPalPayment(Request $request, PayPalClient $client)
+    public function createPayPalPayment(Request $request): JsonResponse
     {
         if (0 !== strpos($request->headers->get("Content-Type"), "application/json")) {
             return;
@@ -39,7 +48,7 @@ class PayPalCreatePaymentController extends AbstractController
         $this->validate($data);
 
         //Build Order
-        $orderBuilder = $client->getOrderBuilder()
+        $orderBuilder = $this->payPalClient->getOrderBuilder()
             ->setAmount($data[PayPalClient::FIELD_AMOUNT])
             ->setCurrency($data[PayPalClient::FIELD_CURRENCY])
             ->setCancelUrl($data[PayPalClient::FIELD_CANCEL_URL])
@@ -57,17 +66,17 @@ class PayPalCreatePaymentController extends AbstractController
         }
 
         //Execute Order against /v2/checkout/orders
-        $data = $this->executeTransaction($client, $orderBuilder->build());
+        $data = $this->executeTransaction($this->payPalClient, $orderBuilder->build());
         return new JsonResponse($data);
     }
 
     /**
      * @Route("/api/paypal/payment", methods={"PUT", "GET"})
      * @param Request $request
-     * @param PayPalClient $client
      * @return JsonResponse
+     * @throws Exception
      */
-    public function completePayPalPayment(Request $request, PayPalClient $client)
+    public function completePayPalPayment(Request $request): JsonResponse
     {
         $data = json_decode($request->getContent(), true);
 
@@ -79,12 +88,12 @@ class PayPalCreatePaymentController extends AbstractController
             $refundCallback = $data['refund_callback'];
         }
 
-        $transaction = $client->getPaymentBuilder()
+        $transaction = $this->payPalClient->getPaymentBuilder()
             ->setPayerId($payerId)
             ->setOrderId($orderId)
             ->build();
 
-        $data = $this->executeTransaction($client, $transaction);
+        $data = $this->executeTransaction($this->payPalClient, $transaction);
 
         $model = new PayPalModel($data);
 
@@ -95,18 +104,24 @@ class PayPalCreatePaymentController extends AbstractController
             $ppOrder->setTransactionId($model->getTransactionId());
             $ppOrder->setRefundCallback($refundCallback);
 
-            $this->getDoctrine()->getManager()->persist($ppOrder);
-            $this->getDoctrine()->getManager()->flush();
+            $this->entityManager->persist($ppOrder);
+            $this->entityManager->flush();
         }
 
         return new JsonResponse($model->getResponseData());
     }
 
-    private function getAccessToken($paypalClient, $newToken = false)
+    /**
+     * @param PayPalClient $paypalClient
+     * @param false $newToken
+     * @return mixed
+     * @throws Exception
+     */
+    private function getAccessToken(PayPalClient $paypalClient, $newToken = false)
     {
-        $repository = $this->getDoctrine()->getRepository(ServerVariables::class);
+        $serverVariableRepository = $this->getDoctrine()->getRepository(ServerVariables::class);
 
-        $serverPayPalVariable = $repository->findOneBy([
+        $serverPayPalVariable = $serverVariableRepository->findOneBy([
             "property" => "PAYPAL_ACCESS_TOKEN"
         ]);
 
@@ -122,9 +137,16 @@ class PayPalCreatePaymentController extends AbstractController
         } else {
             $accessToken = $serverPayPalVariable->getValue();
         }
+
         return $accessToken;
     }
 
+    /**
+     * @param PayPalClient $client
+     * @param $transaction
+     * @return mixed
+     * @throws Exception
+     */
     private function executeTransaction(PayPalClient $client, $transaction)
     {
         $client->setSandboxMode($_ENV["PAYPAL_SANDBOX"]);
